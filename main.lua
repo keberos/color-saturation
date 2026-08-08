@@ -43,10 +43,13 @@
 -- (new maps, new atlases) while the building you were standing in and every
 -- character sprite stayed as they were until the game restarted.
 --
--- So the darkKey suffix is kept for correctness, and every cache is flushed
--- on an actual change via Assets.invalidate(), which runs every registered
--- invalidator -- TileRenderer, SpriteRenderer, MapLoader, BattleState,
--- HudTiles, Font, Screens. That is the engine's own "colours moved" signal.
+-- So the darkKey suffix is kept for correctness, and the caches that can
+-- hold a baked colour are flushed by hand -- NOT via Assets.invalidate(),
+-- which is the engine's "everything changed" signal and drags Sound and
+-- ChipAudio down with it, stopping the music. See section 6.
+--
+-- The flush is also deferred to the moment the menus close, so dragging the
+-- dial across ten steps costs one rebuild rather than ten.
 --
 -- At 100 every wrapper calls straight through and the key is untouched, so
 -- leaving it at default costs nothing and cannot invalidate a bake.
@@ -61,8 +64,6 @@ return function(mod)
   })
 
   local PaletteFX = require("src.render.PaletteFX")
-  local Assets    = require("src.render.Assets")
-  local Runtime   = require("src.mods.Runtime")
 
   local function amount()
     local ok, value = pcall(function() return mod.options:get("amount") end)
@@ -170,14 +171,64 @@ return function(mod)
     return base .. "#sat:" .. tostring(math.floor(k * 100 + 0.5))
   end
 
-  -- ------- 6. flush what darkKey cannot reach
-  local function refresh()
-    pcall(function() Assets.invalidate() end)
+  -- ------- 6. flush what darkKey cannot reach, once, on the way out
+  --
+  -- 0.2.0 called Assets.invalidate() the moment the value moved. That is the
+  -- engine's "everything changed" signal and it runs EVERY registered
+  -- invalidator -- including Sound and ChipAudio, which stops the music --
+  -- and it did so on every 5% step while the dial was being dragged. Hence
+  -- silence and a stutter per keypress.
+  --
+  -- So: only the caches that can actually hold a baked colour, and only once
+  -- the player is back in the world rather than on each step.
+  local INVALIDATORS = {
+    { "src.render.TileRenderer",   "invalidate" },     -- map atlases
+    { "src.render.SpriteRenderer", "invalidate" },     -- OBJ sprite bakes
+    { "src.render.HudTiles",       "invalidate" },
+    { "src.battle.BattleState",    "invalidate" },
+    { "src.world.MapLoader",       "invalidateAll" },  -- future map loads
+  }
+
+  local pending = false
+
+  local function flushNow()
+    for _, entry in ipairs(INVALIDATORS) do
+      pcall(function()
+        local mod_ = require(entry[1])
+        local fn = mod_ and mod_[entry[2]]
+        if type(fn) == "function" then fn() end
+      end)
+    end
   end
 
   mod.events:on("mod.options_changed", function(ev)
-    if ev and ev.mod == "color-saturation" then refresh() end
+    if ev and ev.mod == "color-saturation" then pending = true end
   end)
+
+  -- The flush lands on the first overworld frame where the overworld is
+  -- itself the top of the stack -- i.e. the menus are closed. That is
+  -- "on confirm" without needing a hook the menu does not offer, and it
+  -- collapses a whole drag of the dial into one rebuild.
+  local Overworld = require("src.world.OverworldController")
+
+  if not Overworld._colorSaturationOriginalUpdate then
+    Overworld._colorSaturationOriginalUpdate = Overworld.update
+  end
+  local originalUpdate = Overworld._colorSaturationOriginalUpdate
+
+  function Overworld:update(dt)
+    if pending then
+      local ok, top = pcall(function()
+        local Game = require("src.core.Game")
+        return Game.stack and Game.stack.top and Game.stack:top()
+      end)
+      if ok and top == self then
+        pending = false
+        pcall(flushNow)
+      end
+    end
+    return originalUpdate(self, dt)
+  end
 
   -- ------- 7. a row on the OPTIONS menu, next to COLORS
   --
@@ -212,7 +263,9 @@ return function(mod)
           { mod = "color-saturation", key = "amount", value = n })
       end
     end
-    refresh()
+    -- deliberately does not flush here: the row is being stepped, and the
+    -- rebuild waits until the menus close (see the pending flag above)
+    pending = true
   end
 
   mod.hooks:wrap("ui.options.rows", function(next, game, rows)
