@@ -1,0 +1,19 @@
+{
+  "id": "color-saturation",
+  "name": "Color Saturation",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "github": "keberos/color-saturation",
+  "priority": 100,
+  "permissions": [
+    "engine_internals"
+  ],
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "One SATURATION dial, 0 to 150 percent, that scales how colourful the game is without changing the colours. Every palette that tones ADVANCED down does it by dragging every hue toward one family -- sepia warm, ocean cool, pocket grey. This scales each colour's distance from grey instead, so luminance and hue stay exactly where they were and only chroma moves: 70 is ADVANCED with the shouting turned down, 0 is a true greyscale of the real colours, 150 is louder than vanilla."
+}
