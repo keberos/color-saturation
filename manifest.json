@@ -1,7 +1,7 @@
 {
   "id": "color-saturation",
   "name": "Color Saturation",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",

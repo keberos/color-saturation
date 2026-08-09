@@ -3,11 +3,9 @@
 One dial for how colourful [Gen1Recomp](https://github.com/bryanthaboi/gen1recomp)
 is, with the colours themselves left alone.
 
-> **Untested.** The maths is verified but nobody has played with it yet. Released
-> as a pre-release for that reason — see [Status](#status).
-
-Install with **Launcher → MODS → Import mod .zip**, then set **SATURATION** in the
-mod's options (MODS → the mod → `OPTIONS..`). It reads live; no restart.
+Install with **Launcher → MODS → Import mod .zip**. **SATURATION** appears both
+in the mod's own options (MODS → the mod → `OPTIONS..`) and directly under
+**COLORS** on the main OPTIONS menu. It reads live; no restart.
 
 ## Why
 
@@ -39,13 +37,14 @@ quantises everything onto four fixed values.
 
 ## How it works
 
-Three wrapped functions, between them everything the renderer asks for a colour:
+Four wrapped functions, between them everything the renderer asks for a colour:
 
 | Function | Covers |
 | --- | --- |
 | `worldGroupColors` | the overworld's eight background palettes |
 | `spriteObp` | overworld sprites' OBJ palettes |
-| `effectiveColors` | named palettes — battle backdrops, mon colours, menus |
+| `monPal` | a Pokémon's own colours |
+| `effectiveColors` | named palettes — battle backdrops, menus, HUD |
 
 Output is scaled rather than input: `effectiveColors` applies the display mode's
 own substitution and the shade map, so scaling on the way in would be discarded
@@ -55,14 +54,20 @@ Chroma is scaled about each colour's own luminance using Rec.601 weights — the
 same ones the engine's shade classifier uses — so a colour keeps the brightness
 rung it already occupied. That is what stops a palette from rendering inside out.
 
-### The bake cache
+### The bake caches, and why the dial doesn't touch audio
 
-ADVANCED does not shade at draw time, it **bakes**: tileset atlases and sprite
-sheets are rendered once and cached under a key ending in `darkKey()`. Two
-saturation settings would otherwise share one cache entry and the second would
-show the first one's colours. The engine's own mechanism for this is the
-`darkKey` suffix — a dark cave uses it to keep lit and unlit bakes apart — so the
-dial rides it.
+ADVANCED does not shade at draw time, it **bakes** — and into more than one
+cache. Map atlases key on `darkKey()`, so extending that suffix keeps two
+saturation settings apart, but only for maps loaded *after* a change; the map
+you're standing in keeps its atlas. Sprite bakes key on image path and palette
+group alone and know nothing about colour, so they'd never rebuild on their own.
+
+Both are flushed by hand on an actual change — but only the caches that can
+hold a baked colour (map atlases, sprite bakes, HUD tiles, battle state, map
+loader). Early builds flushed *everything* via the engine's general-purpose
+`Assets.invalidate()`, which also resets `Sound`/`ChipAudio` and stopped the
+music. The flush is also deferred until the menus close, so dragging the dial
+through several steps costs one rebuild, not one per step.
 
 At **100** every wrapper calls straight through and the key is untouched, so
 leaving it at default costs nothing and cannot invalidate a bake.
@@ -79,10 +84,6 @@ leaving it at default costs nothing and cannot invalidate a bake.
 
 ## Status
 
-Pre-release, untested in play. The colour maths is verified — luminance is
-identical at every setting and chroma scales linearly — but the in-game result
-has not been looked at.
-
-Known unknown: whether a change to the dial applies immediately or only after
-re-entering a map. If it is the latter, the bake cache needs an explicit
-invalidation on `mod.options_changed`.
+**Verified in-game.** Confirmed working across the overworld, interiors and
+character sprites, with the dial reachable straight from the OPTIONS menu and
+no impact on music or audio.
